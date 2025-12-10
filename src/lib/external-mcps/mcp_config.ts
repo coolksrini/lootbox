@@ -1,13 +1,9 @@
 // MCP server configuration management
 
 /**
-  McpServerConfig: add supports to all transports
-**/
-interface McpServerConfigBase {
-  transport?: "stdio" | "streamable_http" | "sse";
-}
-
-interface McpServerConfigStdio extends BaseConfig {
+ * McpServerConfig: supports stdio, streamable_http, and sse transports
+ */
+interface McpServerConfigStdio {
   command: string;
   args: string[];
   env?: Record<string, string>;
@@ -16,12 +12,13 @@ interface McpServerConfigStdio extends BaseConfig {
   headers?: never;
 }
 
-interface McpServerConfigHttp extends BaseConfig {
+interface McpServerConfigHttp {
   url: string;
   transport: "streamable_http" | "sse";
   headers?: Record<string, string>[];
   command?: never;
   args?: never;
+  env?: never;
 }
 
 export type McpServerConfig = McpServerConfigStdio | McpServerConfigHttp;
@@ -59,6 +56,7 @@ export async function loadMcpConfig(path: string): Promise<McpConfigFile> {
 
 /**
  * Validate MCP configuration structure and filter out mcp-rpc-bridge
+ * Supports both stdio and HTTP (streamable_http, sse) transports
  */
 export function validateMcpConfig(config: unknown): McpConfigFile {
   if (typeof config !== "object" || config === null) {
@@ -95,45 +93,76 @@ export function validateMcpConfig(config: unknown): McpConfigFile {
     }
 
     const cfg = serverConfig as Record<string, unknown>;
+    const transport = cfg.transport as string | undefined;
 
-    if (typeof cfg.command !== "string") {
-      throw new Error(`Server '${serverName}' must have 'command' string`);
-    }
-
-    if (!Array.isArray(cfg.args)) {
-      throw new Error(`Server '${serverName}' must have 'args' array`);
-    }
-
-    if (!cfg.args.every((arg) => typeof arg === "string")) {
-      throw new Error(
-        `Server '${serverName}' args must be array of strings`
-      );
-    }
-
-    const validatedConfig: McpServerConfig = {
-      command: cfg.command,
-      args: cfg.args as string[],
-    };
-
-    if (cfg.env !== undefined) {
-      if (typeof cfg.env !== "object" || cfg.env === null) {
-        throw new Error(`Server '${serverName}' env must be an object`);
+    // Determine transport type (default to stdio if not specified)
+    if (transport === "streamable_http" || transport === "sse") {
+      // HTTP-based transport validation
+      if (typeof cfg.url !== "string") {
+        throw new Error(`Server '${serverName}' with transport '${transport}' must have 'url' string`);
       }
-      const env = cfg.env as Record<string, unknown>;
-      if (!Object.values(env).every((val) => typeof val === "string")) {
+
+      const validatedConfig: McpServerConfig = {
+        transport: transport,
+        url: cfg.url,
+      };
+
+      // Optional headers for HTTP transports
+      if (cfg.headers !== undefined) {
+        if (!Array.isArray(cfg.headers)) {
+          throw new Error(`Server '${serverName}' headers must be an array`);
+        }
+        validatedConfig.headers = cfg.headers as Record<string, string>[];
+      }
+
+      // Sanitize server name to ensure it's a valid identifier
+      const sanitizedName = sanitizeServerName(serverName);
+      if (sanitizedName !== serverName) {
+        console.error(`Sanitized MCP server name: '${serverName}' -> '${sanitizedName}'`);
+      }
+      validated[sanitizedName] = validatedConfig;
+    } else {
+      // stdio transport validation (default)
+      if (typeof cfg.command !== "string") {
+        throw new Error(`Server '${serverName}' must have 'command' string`);
+      }
+
+      if (!Array.isArray(cfg.args)) {
+        throw new Error(`Server '${serverName}' must have 'args' array`);
+      }
+
+      if (!cfg.args.every((arg) => typeof arg === "string")) {
         throw new Error(
-          `Server '${serverName}' env values must be strings`
+          `Server '${serverName}' args must be array of strings`
         );
       }
-      validatedConfig.env = env as Record<string, string>;
-    }
 
-    // Sanitize server name to ensure it's a valid identifier
-    const sanitizedName = sanitizeServerName(serverName);
-    if (sanitizedName !== serverName) {
-      console.error(`Sanitized MCP server name: '${serverName}' -> '${sanitizedName}'`);
+      const validatedConfig: McpServerConfig = {
+        command: cfg.command,
+        args: cfg.args as string[],
+        transport: "stdio",
+      };
+
+      if (cfg.env !== undefined) {
+        if (typeof cfg.env !== "object" || cfg.env === null) {
+          throw new Error(`Server '${serverName}' env must be an object`);
+        }
+        const env = cfg.env as Record<string, unknown>;
+        if (!Object.values(env).every((val) => typeof val === "string")) {
+          throw new Error(
+            `Server '${serverName}' env values must be strings`
+          );
+        }
+        validatedConfig.env = env as Record<string, string>;
+      }
+
+      // Sanitize server name to ensure it's a valid identifier
+      const sanitizedName = sanitizeServerName(serverName);
+      if (sanitizedName !== serverName) {
+        console.error(`Sanitized MCP server name: '${serverName}' -> '${sanitizedName}'`);
+      }
+      validated[sanitizedName] = validatedConfig;
     }
-    validated[sanitizedName] = validatedConfig;
   }
 
   return { mcpServers: validated };

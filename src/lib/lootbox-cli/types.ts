@@ -4,11 +4,8 @@ export interface ExecResponse {
   id?: string;
 }
 
-export interface McpServerConfig {
-  command: string;
-  args: string[];
-  env?: Record<string, string>;
-}
+// Re-export McpServerConfig from the external-mcps module for consistency
+export type { McpServerConfig } from "../external-mcps/mcp_config.ts";
 
 export interface Config {
   // Client settings
