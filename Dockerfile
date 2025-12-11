@@ -1,7 +1,7 @@
 # Lootbox - MCP RPC Bridge Server
 # Deno-based server for code-mode execution with MCP tools
 
-FROM denoland/deno:alpine-2.1.4
+FROM denoland/deno:alpine-2.3.1
 
 WORKDIR /app
 
